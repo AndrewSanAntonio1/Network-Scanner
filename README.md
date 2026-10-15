@@ -40,6 +40,8 @@ No separate Python packages are required; the scanner uses the Python standard l
 
 For each run, the script validates the target (IP, hostname, or CIDR), port expression, timeout, and output prefix. It accepts CIDR ranges containing up to **1,024 addresses**. It then locates the `nmap` executable and creates timestamped report filenames.
 
+Use `--full` to run the complete authorized workflow: host discovery, all TCP ports (`1-65535`), service detection, version detection, best-effort OS fingerprinting, and Nmap vulnerability-category checks. The discovery phase runs first; Nmap performs the port, service/version, OS, and vulnerability checks together in the subsequent scan command. `--full` cannot be combined with `--discover-only`, `--skip-discovery`, or a custom port range.
+
 ### 1. Host discovery
 
 Unless `--skip-discovery` is used, the script first runs:
@@ -54,16 +56,20 @@ nmap -sn --reason -oN <report>.txt <target>
 
 If the run is not discovery-only, the script performs an Nmap TCP connect scan (`-sT`) with service/version detection (`-sV --version-light`) and OS fingerprinting (`-O`). By default, it scans TCP ports `1-65535`; use `--ports` to change them. The script also sets the Nmap host timeout and requests scan reasons with `--reason`.
 
-When `--vuln-check` is used, the script adds Nmap's `vuln` script category. These are detection/check scripts, not a complete CVE database and not proof that a finding is exploitable.
+When `--vuln-check` or `--full` is used, the script adds Nmap's `vuln` script category. These are detection/check scripts, not a complete CVE database and not proof that a finding is exploitable.
 
 ### 3. Reports
 
-A full scan creates two reports in the current working directory:
+A port scan creates two reports in the current working directory:
 
 - `<prefix>_<timestamp>.txt` — human-readable normal Nmap output
 - `<prefix>_<timestamp>.xml` — XML output for tool-assisted review or parsing
 
-A discovery-only run creates a normal text report only. Use a unique `--output` prefix to organize reports by test or target. Do not commit reports containing sensitive network information.
+A run that performs host discovery also creates `<prefix>_<timestamp>_discovery.txt`; this preserves discovery results separately from the port-scan output. A discovery-only run creates that text report only.
+
+Add `--json` to also create `<prefix>_<timestamp>.json`, a structured report parsed from Nmap's XML. It includes scan metadata, host status and addresses, port states, detected services and versions, OS matches, script output, and a summary of hosts up/down, open TCP ports, and script results. Script results are raw evidence, not confirmed vulnerabilities.
+
+Use a unique `--output` prefix to organize reports by test or target. Do not commit reports containing sensitive network information.
 
 ## Commands
 
@@ -80,6 +86,14 @@ python3 networkscanner.py 127.0.0.1 --discover-only
 ```bash
 sudo python3 networkscanner.py 127.0.0.1
 ```
+
+### Full authorized reconnaissance workflow with JSON summary
+
+```bash
+sudo python3 networkscanner.py 192.168.1.10 --full --json
+```
+
+This runs host discovery, scans all TCP ports, enables service/version and best-effort OS detection, runs Nmap's `vuln` scripts, and saves TXT, XML, and JSON reports. The JSON summary reports counts and script output for analyst review; it does not confirm exploitability.
 
 ### Include Nmap vulnerability-category scripts
 
@@ -112,12 +126,14 @@ sudo python3 networkscanner.py 127.0.0.1 --skip-discovery
 | Option | Default | Description |
 | --- | --- | --- |
 | `target` | None | Required IP address, hostname, or CIDR containing up to 1,024 addresses |
+| `--full` | Off | Run discovery, scan TCP ports 1–65535, detect services/versions and OS, and enable vulnerability scripts |
 | `--discover-only` | Off | Run only the discovery phase when not combined with `--skip-discovery` |
 | `--skip-discovery` | Off | Skip the standalone discovery phase before the port scan |
 | `--ports` | `1-65535` | TCP port or comma-separated ports/ranges, e.g. `22,80,443,8000-8100` |
 | `--timeout` | `1000` ms | Nmap host timeout; allowed range is `100`–`600000` ms |
 | `--vuln-check` | Off | Add Nmap's `vuln` script category |
 | `--output` | `networkscan` | Prefix for timestamped report filenames |
+| `--json` | Off | Save a structured JSON report alongside the TXT and XML reports; requires a port scan |
 | `-h`, `--help` | — | Show the built-in help |
 
 ## Red-team review workflow
@@ -133,6 +149,7 @@ sudo python3 networkscanner.py 127.0.0.1 --skip-discovery
 
 - **OS identification:** Fingerprinting is best-effort; the OS may not be identified or may be identified incorrectly. Elevated privileges may be required.
 - **Vulnerability coverage:** Nmap scripts are not a complete vulnerability database and do not replace vendor advisories or a dedicated vulnerability management process.
+- **Full scan impact:** `--full` scans all TCP ports and runs vulnerability-category scripts; it can take time, generate significant network traffic, and produce false positives or false negatives. Use only within the approved scope and testing window.
 - **Authenticated assessment:** The scanner does not log in to hosts or audit installed packages from inside the host.
 - **Exploitation:** Exploitation, credential theft, persistence, and lateral movement are not included.
 - **Host discovery:** Hosts that block probes may not be detected. In the current implementation, `--skip-discovery` is not equivalent to Nmap's `-Pn`.
